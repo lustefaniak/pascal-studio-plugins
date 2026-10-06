@@ -1,0 +1,53 @@
+{
+  "name": "@lustefaniak/pascal-studio-camera",
+  "version": "0.2.0",
+  "description": "Pascal editor plugin: saved camera shots as scene nodes, a vertical section cut per shot, and rendering through the host's snapshot pipeline, also headless.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Łukasz Stefaniak (https://github.com/lustefaniak)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lustefaniak/pascal-studio-plugins.git",
+    "directory": "packages/camera"
+  },
+  "bugs": {
+    "url": "https://github.com/lustefaniak/pascal-studio-plugins/issues"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/lustefaniak/pascal-studio-plugins/tree/main/packages/camera#readme",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "keywords": [
+    "pascal",
+    "pascal-editor",
+    "plugin",
+    "camera",
+    "render"
+  ],
+  "dependencies": {
+    "@lustefaniak/pascal-studio-core": "workspace:^"
+  },
+  "peerDependencies": {
+    "@pascal-app/core": "^1.0.3",
+    "@pascal-app/editor": "^1.0.3",
+    "@pascal-app/viewer": "^1.0.3",
+    "@react-three/fiber": "^9",
+    "react": "^18 || ^19",
+    "three": "^0.186",
+    "zod": ">=4.5.4 <4.6",
+    "zustand": "^5"
+  }
+}
