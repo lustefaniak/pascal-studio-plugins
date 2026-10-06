@@ -4,11 +4,13 @@ import {
   completeShotRequest,
   loadRooms,
   nextShotRequest,
+  postSceneGlb,
   postShot,
   shotSlug,
   useStudioStore,
 } from '@lustefaniak/pascal-studio-core'
 import { emitter, sceneRegistry, useScene } from '@pascal-app/core'
+import { exportSceneToGlb } from '@pascal-app/editor'
 import * as viewerApi from '@pascal-app/viewer'
 import {
   createSnapshotPipeline,
@@ -300,6 +302,34 @@ export default function StudioCaptureSystem() {
     }
   }
 
+  // The scene as GLB, for the worker's API and offline renderers, through the
+  // editor's own exporter: node ids as names, real materials, export-only
+  // geometry for instanced kinds. Runs only in the worker's headless editor
+  // (the worker hands exports to no other tab) until Pascal can export
+  // without a browser.
+  async function exportScene(requestId: string) {
+    try {
+      const root = scene.getObjectByName('scene-renderer')
+      if (!root) throw new Error('scene-renderer group not found')
+      await untilSceneBuilt()
+      // Instanced kinds swap their invisible proxies for real geometry while
+      // exporting; the same dance as the editor's own export button.
+      useViewer.getState().setExporting(true)
+      try {
+        await nextFrames()
+        // Hidden nodes stay in: the renderer decides what a shot hides.
+        const glb = await exportSceneToGlb(root, useScene.getState().nodes, { onlyVisible: false })
+        await postSceneGlb(requestId, new Blob([glb], { type: 'model/gltf-binary' }))
+      } finally {
+        useViewer.getState().setExporting(false)
+      }
+      await completeShotRequest(requestId)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      await completeShotRequest(requestId, message).catch(() => {})
+    }
+  }
+
   // Long-poll the worker so an agent can ask for shots while the editor sits
   // open. An idle editor holds one request open instead of spinning.
   useEffect(() => {
@@ -310,7 +340,9 @@ export default function StudioCaptureSystem() {
       while (!stopped) {
         try {
           const request = await nextShotRequest(controller.signal)
-          if (request) {
+          if (request?.kind === 'export') {
+            await exportScene(request.requestId)
+          } else if (request) {
             useStudioStore.getState().requestShots({ ...request, fromWorker: true })
           }
         } catch {
@@ -507,6 +539,13 @@ export default function StudioCaptureSystem() {
  */
 function shotName(node: StudioCameraNode): string {
   return shotSlug(node.name ?? '') || `shot_${node.shot}`
+}
+
+/** Two animation frames: long enough for React to commit export-only geometry. */
+function nextFrames(): Promise<void> {
+  return new Promise((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  )
 }
 
 /**

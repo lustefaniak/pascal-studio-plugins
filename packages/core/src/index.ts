@@ -18,6 +18,7 @@ export {
   type LibraryModel,
   listLibrary,
   nextShotRequest,
+  postSceneGlb,
   postShot,
   type ShotRequest,
   searchIkea,

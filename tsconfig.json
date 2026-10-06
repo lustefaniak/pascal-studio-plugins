@@ -23,7 +23,8 @@
     ]
   },
   "include": [
-    "packages/*/src"
+    "packages/*/src",
+    "types"
   ],
   "exclude": [
     "node_modules"

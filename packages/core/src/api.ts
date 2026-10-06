@@ -94,6 +94,11 @@ export type IkeaProduct = IkeaHit & {
 }
 
 export type ShotRequest = {
+  /**
+   * `export` asks for the scene as GLB instead of shots; the worker hands those
+   * only to its own headless editor. Absent on shot requests.
+   */
+  kind?: 'export'
   /** Node ids to render; empty means every camera in the scene. */
   cameraIds: string[]
   width: number
@@ -223,6 +228,16 @@ export async function postShot({
 }
 
 /** Reports that a queued request finished, so the agent's MCP call can return. */
+/** Hands an exported scene to the worker, which keeps it for its API and renderers. */
+export async function postSceneGlb(requestId: string, glb: Blob): Promise<void> {
+  const response = await fetch(`${WORKER_ORIGIN}/studio/scene.glb`, {
+    method: 'POST',
+    headers: { 'content-type': 'model/gltf-binary', 'x-studio-request': requestId },
+    body: glb,
+  })
+  if (!response.ok) throw new Error(`worker /studio/scene.glb: ${response.status}`)
+}
+
 export async function completeShotRequest(requestId: string, error?: string): Promise<void> {
   await fetch(`${WORKER_ORIGIN}/studio/commands/complete`, {
     method: 'POST',

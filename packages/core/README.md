@@ -26,9 +26,11 @@ model a panel places, so keep it stable.
 | GET | `/studio/ikea/search?q=` | catalog hits with variants |
 | GET | `/studio/ikea/product?id=` | set contents and accessories |
 | POST | `/studio/ikea/import` | `{ id, name, quality }` → downloads and measures a model |
-| GET | `/studio/commands[?role=headless]` | long poll for the next render job |
+| GET | `/studio/commands[?role=headless]` | long poll for the next job: shots, or `{ kind: 'export' }` (headless only) |
 | POST | `/studio/commands/complete` | `{ requestId, error }` |
 | POST | `/studio/shots` | PNG body; headers `x-studio-name`, `x-studio-request`, `x-studio-meta` |
+| POST | `/studio/scene.glb` | the exported scene, header `x-studio-request` |
+| GET | `/studio/scene.glb` | the scene as GLB for any consumer, header `X-Scene-Version` |
 | GET | `/<path>.glb` | model files |
 
 ### Headless rendering
