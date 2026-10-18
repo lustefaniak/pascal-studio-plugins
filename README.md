@@ -9,6 +9,7 @@ of plumbing.
 | [`@lustefaniak/pascal-studio-camera`](packages/camera) | `studio:camera` | Cameras | Saved shots as scene nodes: framing preview, aiming, a vertical section cut per shot, rendering through the host's snapshot pipeline — also from a headless browser. |
 | [`@lustefaniak/pascal-studio-library`](packages/library) | `studio:library` | Library | The project's own GLB models, with dimensions read from the file and a usage count in the scene. Refreshes as models are regenerated on disk. |
 | [`@lustefaniak/pascal-studio-ikea`](packages/ikea) | `studio:ikea` | IKEA | Search the IKEA catalog, pick a colour or size variant, download the model, measure it and place it. |
+| [`@lustefaniak/pascal-studio-notes`](packages/notes) | `studio:note` | Notes | Notes pinned in the scene for an agent: what to change and where, as a conversation with a status saying whose turn it is, archived once settled. Needs no worker. |
 | [`@lustefaniak/pascal-studio-core`](packages/core) | — | — | The studio worker client, the project's room list, the shared store and model placement. |
 
 Every package is structurally a third-party plugin, the same shape as
@@ -16,7 +17,7 @@ Every package is structurally a third-party plugin, the same shape as
 peer-depends on `@pascal-app/{core,viewer,editor}` and imports nothing private. The plugins target
 plugin API v1. The UI is English; Pascal has no localisation layer for a plugin to hook into.
 
-All three panels talk to a small local HTTP service, the **studio worker** — see
+The camera, library and IKEA panels talk to a small local HTTP service, the **studio worker** — see
 [`packages/core`](packages/core#the-worker) for its contract.
 
 ## Using a plugin in a host

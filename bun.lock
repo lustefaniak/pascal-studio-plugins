@@ -90,6 +90,23 @@
         "zustand": "^5",
       },
     },
+    "packages/notes": {
+      "name": "@lustefaniak/pascal-studio-notes",
+      "version": "0.1.0",
+      "dependencies": {
+        "@lustefaniak/pascal-studio-core": "workspace:^",
+      },
+      "peerDependencies": {
+        "@pascal-app/core": "^1.0.3",
+        "@pascal-app/editor": "^1.0.3",
+        "@pascal-app/viewer": "^1.0.3",
+        "@react-three/fiber": "^9",
+        "react": "^18 || ^19",
+        "three": "^0.186",
+        "zod": ">=4.5.4 <4.6",
+        "zustand": "^5",
+      },
+    },
   },
   "packages": {
     "@babel/runtime": ["@babel/runtime@7.29.7", "", {}, "sha512-Nq8OhGWiZIZGV6hLHoyAKLLcJihP/xFeBMGJoUrxTX2psI8dCifzLhZISFb+VWS3wFMRDmCGw5R+dOySCqPLhw=="],
@@ -211,6 +228,8 @@
     "@lustefaniak/pascal-studio-ikea": ["@lustefaniak/pascal-studio-ikea@workspace:packages/ikea"],
 
     "@lustefaniak/pascal-studio-library": ["@lustefaniak/pascal-studio-library@workspace:packages/library"],
+
+    "@lustefaniak/pascal-studio-notes": ["@lustefaniak/pascal-studio-notes@workspace:packages/notes"],
 
     "@mediapipe/tasks-vision": ["@mediapipe/tasks-vision@0.10.17", "", {}, "sha512-CZWV/q6TTe8ta61cZXjfnnHsfWIdFhms03M9T7Cnd5y2mdpylJM0rF1qRq+wsQVRMLz1OYPVEBU9ph2Bx8cxrg=="],
 

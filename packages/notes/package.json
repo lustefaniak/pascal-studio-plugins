@@ -1,0 +1,53 @@
+{
+  "name": "@lustefaniak/pascal-studio-notes",
+  "version": "0.1.0",
+  "description": "Pascal editor plugin: notes pinned in the scene, each a short conversation with a status, so an agent can read what to change and where instead of being told in words.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Łukasz Stefaniak (https://github.com/lustefaniak)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lustefaniak/pascal-studio-plugins.git",
+    "directory": "packages/notes"
+  },
+  "bugs": {
+    "url": "https://github.com/lustefaniak/pascal-studio-plugins/issues"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/lustefaniak/pascal-studio-plugins/tree/main/packages/notes#readme",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "keywords": [
+    "pascal",
+    "pascal-editor",
+    "plugin",
+    "notes",
+    "review"
+  ],
+  "dependencies": {
+    "@lustefaniak/pascal-studio-core": "workspace:^"
+  },
+  "peerDependencies": {
+    "@pascal-app/core": "^1.0.3",
+    "@pascal-app/editor": "^1.0.3",
+    "@pascal-app/viewer": "^1.0.3",
+    "@react-three/fiber": "^9",
+    "react": "^18 || ^19",
+    "three": "^0.186",
+    "zod": ">=4.5.4 <4.6",
+    "zustand": "^5"
+  }
+}
