@@ -6,6 +6,7 @@ import { useViewer } from '@pascal-app/viewer'
 import { useMemo, useState } from 'react'
 import { Box3, Vector3 } from 'three'
 import type { StudioNoteNode } from './schema'
+import { useNotesStore } from './store'
 import {
   activeOrder,
   lastAt,
@@ -18,38 +19,23 @@ import {
 type Tab = 'active' | 'archive'
 
 /**
- * Where a new note goes: on top of the selected thing, tied to it, or — with
- * nothing selected — two metres in front of the viewport at worktop height,
- * to be dragged onto the spot. The world box is read from the scene registry
- * and brought into the level's frame, which is the note's parent.
+ * A note on the selected thing: on top of its box, tied to it. The box is read
+ * from the scene registry and brought into the level's frame, the note's parent.
+ * Clicking the spot (the pick system) is the usual way; this one is for a node
+ * picked in the outliner or one too small to hit.
  */
-function placement(
-  selectedId: string | undefined,
-  levelId: string,
-  view: { position: [number, number, number]; yaw: number } | null,
-): { position: [number, number, number]; target: string } {
-  const level = sceneRegistry.nodes.get(levelId)
-  const object = selectedId ? sceneRegistry.nodes.get(selectedId) : undefined
-  if (object && selectedId) {
-    const box = new Box3().setFromObject(object)
-    if (!box.isEmpty()) {
-      const top = new Vector3(
-        (box.min.x + box.max.x) / 2,
-        box.max.y + 0.05,
-        (box.min.z + box.max.z) / 2,
-      )
-      level?.worldToLocal(top)
-      return { position: [top.x, top.y, top.z], target: selectedId }
-    }
-  }
-  if (view) {
-    const [x, , z] = view.position
-    return {
-      position: [x + Math.sin(view.yaw) * 2, 1.2, z + Math.cos(view.yaw) * 2],
-      target: selectedId ?? '',
-    }
-  }
-  return { position: [0, 1.2, 0], target: selectedId ?? '' }
+function onTopOf(selectedId: string, levelId: string): [number, number, number] | null {
+  const object = sceneRegistry.nodes.get(selectedId)
+  if (!object) return null
+  const box = new Box3().setFromObject(object)
+  if (box.isEmpty()) return null
+  const top = new Vector3(
+    (box.min.x + box.max.x) / 2,
+    box.max.y + 0.05,
+    (box.min.z + box.max.z) / 2,
+  )
+  sceneRegistry.nodes.get(levelId)?.worldToLocal(top)
+  return [top.x, top.y, top.z]
 }
 
 export default function NotesPanel() {
@@ -79,18 +65,28 @@ export default function NotesPanel() {
   // Pinning a note onto a note makes no sense; treat it as nothing selected.
   const anchor = selectedNode && selectedNode.type !== 'studio:note' ? selectedId : undefined
 
-  const pin = () => {
-    if (!(levelId && draft.trim())) return
-    const { position, target } = placement(anchor, levelId, view)
+  const picking = useNotesStore((state) => state.picking)
+
+  const pinByClick = () => {
+    if (!draft.trim()) return
+    useNotesStore.getState().setPicking({ mode: 'new', text: draft })
+    setDraft('')
+    setTab('active')
+  }
+
+  const pinOnSelection = () => {
+    if (!(levelId && anchor && draft.trim())) return
+    const position = onTopOf(anchor, levelId)
+    if (!position) return
     const node = {
       object: 'node',
       type: 'studio:note',
       id: `note_${Math.random().toString(36).slice(2, 12)}`,
       parentId: levelId,
       visible: true,
-      metadata: {},
+      metadata: view ? { view: { position: view.position, yaw: view.yaw } } : {},
       position,
-      target,
+      target: anchor,
       ...withUserMessage({ thread: [] }, draft),
     }
     useScene.getState().createNode(node as unknown as AnyNode, levelId as AnyNodeId)
@@ -105,18 +101,45 @@ export default function NotesPanel() {
       <textarea
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
-          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) pin()
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) pinByClick()
         }}
         placeholder="What should change here?"
         rows={3}
         style={{ ...S.input, resize: 'vertical', fontFamily: 'inherit' }}
         value={draft}
       />
-      <button disabled={!(levelId && draft.trim())} onClick={pin} style={S.primary} type="button">
-        {anchor
-          ? `Pin note on “${selectedNode?.name || selectedNode?.type}”`
-          : 'Pin note in front of the view'}
-      </button>
+      {picking ? (
+        <div style={S.row}>
+          <span style={{ ...S.muted, flex: 1 }}>
+            {picking.mode === 'new'
+              ? 'Click the spot in 3D: a wall, a cabinet, the floor. Drag still orbits.'
+              : 'Click the new spot for this note in 3D.'}
+          </span>
+          <button
+            onClick={() => useNotesStore.getState().setPicking(null)}
+            style={S.small}
+            type="button"
+          >
+            Cancel (Esc)
+          </button>
+        </div>
+      ) : (
+        <>
+          <button disabled={!draft.trim()} onClick={pinByClick} style={S.primary} type="button">
+            Pin by clicking the spot
+          </button>
+          {anchor ? (
+            <button
+              disabled={!(levelId && draft.trim())}
+              onClick={pinOnSelection}
+              style={S.small}
+              type="button"
+            >
+              {`Pin on the selection: “${selectedNode?.name || selectedNode?.type}”`}
+            </button>
+          ) : null}
+        </>
+      )}
 
       <div style={S.segmented}>
         {(['active', 'archive'] as const).map((key) => (
@@ -251,6 +274,13 @@ function NoteRow({
             </button>
             <button onClick={flyTo} style={S.small} type="button">
               Go to
+            </button>
+            <button
+              onClick={() => useNotesStore.getState().setPicking({ mode: 'move', noteId: note.id })}
+              style={S.small}
+              type="button"
+            >
+              Move
             </button>
             {note.status === 'archived' ? (
               <button onClick={() => update({ status: 'answered' })} style={S.small} type="button">

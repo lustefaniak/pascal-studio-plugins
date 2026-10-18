@@ -40,6 +40,9 @@ export const noteDefinition: NoteDefinition = {
   floorplan: buildNoteFloorplan,
 
   renderer: { kind: 'parametric', module: () => import('./renderer') },
+  // Click-to-pin needs the canvas, so it lives in a system; mounted per kind,
+  // it is there before the first note exists.
+  system: { module: () => import('./pick-system'), priority: 9 },
 
   presentation: {
     label: 'Note',
@@ -52,7 +55,9 @@ export const noteDefinition: NoteDefinition = {
     description:
       'A note pinned in the scene: a conversation between the person and an agent about a change ' +
       'at this spot. `target` is the id of the node it is about (may be empty), `thread` the ' +
-      'messages ({author: user|agent, text, at}), `status` whose turn it is: open = waiting for the ' +
+      'messages ({author: user|agent, text, at}), `metadata.view` where the person stood when pinning ' +
+      '(position, yaw; 0 looks south/+z) and `metadata.normal` the surface it was pinned on. ' +
+      '`status` says whose turn it is: open = waiting for the ' +
       'agent, thinking = the agent is on it, answered = waiting for the person, archived = settled. ' +
       'An agent picks up an open note by setting thinking, does the change, then appends its reply ' +
       'and sets answered. It archives only when the person says the matter is closed.',
