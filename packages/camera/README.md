@@ -20,3 +20,13 @@ the studio worker ([contract](../core#the-worker)) to write renders to disk.
   consumes the shots and are never reassigned.
 - Markers sit on `OVERLAY_LAYER`, which the capture camera disables, so they never appear in a render.
   `K` toggles them in the viewport.
+
+## Idle frame loop
+
+The host advances 50 frames a second whether or not anything changes. While this plugin is loaded,
+the frame loop stops after 3 s without activity and starts again on the next one. Activity is
+pointer, wheel or keyboard input, a scene change (scripted writes included), a viewer state change,
+an asset that finishes loading, or a capture in progress. A pause set by the host is never cleared.
+
+- `?studio-idle-pause=0` keeps the host's constant frame loop.
+- `?studio-idle-pause=debug` counts what woke the loop in `window.__studioIdleWakes`.

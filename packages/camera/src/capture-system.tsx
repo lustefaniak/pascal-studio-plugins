@@ -22,9 +22,10 @@ import {
 } from '@pascal-app/viewer'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
-import { type Object3D, PerspectiveCamera, Vector3 } from 'three'
+import { DefaultLoadingManager, type Object3D, PerspectiveCamera, Vector3 } from 'three'
 import type { WebGPURenderer } from 'three/webgpu'
 import { captureFov, framingOf, topDownHeight } from './framing'
+import { createIdlePause, type IdlePause } from './idle-pause'
 import type { StudioCameraNode } from './schema'
 
 /** Near plane of a shot without a section cut. */
@@ -32,6 +33,30 @@ const DEFAULT_NEAR = 0.05
 
 /** Reused so the per-frame pose publisher allocates nothing. */
 const scratch = new Vector3()
+
+/** Input that means someone is looking at the viewport and may move it. */
+const ACTIVITY_EVENTS = [
+  'pointerdown',
+  'pointermove',
+  'pointerup',
+  'wheel',
+  'keydown',
+  'keyup',
+  'resize',
+  'focus',
+]
+
+/** The frame-loop pause while this system is mounted; a capture holds it awake. */
+let idlePause: IdlePause | null = null
+
+async function awake<T>(work: () => Promise<T>): Promise<T> {
+  const release = idlePause?.hold()
+  try {
+    return await work()
+  } finally {
+    release?.()
+  }
+}
 
 /** Panel preview size. Small enough to re-render on every parameter tweak. */
 const PREVIEW_WIDTH = 480
@@ -188,7 +213,15 @@ export default function StudioCaptureSystem() {
    * through a different code path would stop being a preview the moment the
    * two drifted.
    */
-  async function capture(cameraId: string, width: number, height: number): Promise<Blob | null> {
+  function capture(cameraId: string, width: number, height: number): Promise<Blob | null> {
+    return awake(() => captureFrame(cameraId, width, height))
+  }
+
+  async function captureFrame(
+    cameraId: string,
+    width: number,
+    height: number,
+  ): Promise<Blob | null> {
     const camera = cameraRef.current
     const pipeline = pipelineRef.current
     if (!(camera && pipeline)) return null
@@ -307,7 +340,11 @@ export default function StudioCaptureSystem() {
   // geometry for instanced kinds. Runs only in the worker's headless editor
   // (the worker hands exports to no other tab) until Pascal can export
   // without a browser.
-  async function exportScene(requestId: string) {
+  function exportScene(requestId: string) {
+    return awake(() => exportSceneNow(requestId))
+  }
+
+  async function exportSceneNow(requestId: string) {
     try {
       const root = scene.getObjectByName('scene-renderer')
       if (!root) throw new Error('scene-renderer group not found')
@@ -385,6 +422,70 @@ export default function StudioCaptureSystem() {
       }),
     [controls],
   )
+
+  // Nothing changes on screen without input, a scene change or an asset
+  // arriving, so the frame loop stops between them; see `idle-pause.ts`.
+  // `?studio-idle-pause=0` keeps the host's constant 50 fps.
+  useEffect(() => {
+    const mode = new URLSearchParams(window.location.search).get('studio-idle-pause')
+    if (mode === '0') return
+    // `?studio-idle-pause=debug` counts what woke the loop in `window.__studioIdleWakes`.
+    const wakes: Record<string, number> = {}
+    if (mode === 'debug')
+      (window as unknown as { __studioIdleWakes: object }).__studioIdleWakes = wakes
+    const from = (source: string) => () => {
+      if (mode === 'debug') wakes[source] = (wakes[source] ?? 0) + 1
+      idle.wake()
+    }
+    const idle = createIdlePause({
+      setRenderPaused: (value) => useViewer.getState().setRenderPaused(value),
+    })
+    idlePause = idle
+    const onActivity = (event: Event) => from(event.type)()
+    for (const name of ACTIVITY_EVENTS) {
+      window.addEventListener(name, onActivity, { capture: true, passive: true })
+    }
+    document.addEventListener('visibilitychange', onActivity)
+    // Scripted writes arrive through the live event stream with no input at all.
+    const offScene = useScene.subscribe(from('scene'))
+    // Frames write to the viewer store too, so only a change made while paused
+    // (a host UI toggle, an MCP selection) counts as activity. Pausing itself
+    // makes the host write values it already holds (the camera controls reset
+    // their dragging flag), so a key counts only when its value changed.
+    const offViewer = useViewer.subscribe((state, previous) => {
+      if (!idle.paused()) return
+      const changed = (Object.keys(state) as (keyof typeof state)[]).filter(
+        (key) => key !== 'renderPaused' && !Object.is(state[key], previous[key]),
+      )
+      for (const key of changed) from(`viewer.${String(key)}`)()
+    })
+    // Models and textures finish loading on their own, long after the input
+    // that asked for them; without this they would appear on the next mouse move.
+    const manager = DefaultLoadingManager
+    const { itemStart, itemEnd } = manager
+    const start = (url: string) => {
+      itemStart.call(manager, url)
+      from('load')()
+    }
+    const end = (url: string) => {
+      itemEnd.call(manager, url)
+      from('load')()
+    }
+    manager.itemStart = start
+    manager.itemEnd = end
+    return () => {
+      for (const name of ACTIVITY_EVENTS) {
+        window.removeEventListener(name, onActivity, { capture: true })
+      }
+      document.removeEventListener('visibilitychange', onActivity)
+      offScene()
+      offViewer()
+      if (manager.itemStart === start) manager.itemStart = itemStart
+      if (manager.itemEnd === end) manager.itemEnd = itemEnd
+      idle.dispose()
+      if (idlePause === idle) idlePause = null
+    }
+  }, [])
 
   // Preview thumbnails for the panel — same pipeline as a real shot, just
   // small and kept in memory, so what the panel shows is what the render gives.
