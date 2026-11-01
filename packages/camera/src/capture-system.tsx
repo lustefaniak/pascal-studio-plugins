@@ -22,14 +22,28 @@ import {
 } from '@pascal-app/viewer'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
-import { DefaultLoadingManager, type Object3D, PerspectiveCamera, Vector3 } from 'three'
-import type { WebGPURenderer } from 'three/webgpu'
+import {
+  type BatchedMesh,
+  Box3,
+  DefaultLoadingManager,
+  Matrix4,
+  type Mesh,
+  type Object3D,
+  PerspectiveCamera,
+  Plane,
+  type Scene,
+  Vector3,
+} from 'three'
+import { ClippingGroup, type WebGPURenderer } from 'three/webgpu'
 import { captureFov, framingOf, topDownHeight } from './framing'
 import { createIdlePause, type IdlePause } from './idle-pause'
+import { type Cutaway, classify, maskRects, type PlanRect } from './mask'
 import type { StudioCameraNode } from './schema'
 
 /** Near plane of a shot without a section cut. */
 const DEFAULT_NEAR = 0.05
+/** Far plane of a perspective shot. */
+const DEFAULT_FAR = 400
 
 /** Reused so the per-frame pose publisher allocates nothing. */
 const scratch = new Vector3()
@@ -108,6 +122,168 @@ function standDownBatches(scene: Object3D): () => void {
   }
 }
 
+/**
+ * Keep only what lies inside `rects` (plan rectangles, see `mask.ts`) for one
+ * capture; the returned function puts the scene back.
+ *
+ * A drawable entirely outside is hidden. One crossing the outline is moved into
+ * a `ClippingGroup` holding the four vertical planes of one rectangle (and a
+ * horizontal one at its cutaway height), and gets a clone (same geometry and
+ * material) in another group for every further rectangle it touches, because
+ * one clipping region is convex and a room need not be. The groups have
+ * identity transforms and sit where the object sat, so nothing moves. Clipping
+ * skips the shadow pass (`clipShadows` off), so cut walls still shade the room
+ * like the real ones.
+ *
+ * The host re-batches items while a capture renders its frames (an
+ * `item-batch` mesh appears after the masking ran), so the scan runs again
+ * before every render of the scene until the capture is over. A batch is never
+ * moved: the host disposes a batch whose parent is not its level root. Its
+ * instances outside the kept area are switched off one by one instead, and an
+ * instance crossing the outline stays whole.
+ */
+function maskScene(scene: Scene, root: Object3D, rects: readonly PlanRect[]): () => void {
+  const seen = new WeakSet<Object3D>()
+  const hidden: Object3D[] = []
+  const moved: { mesh: Mesh; parent: Object3D; index: number; group: ClippingGroup }[] = []
+  const extra: ClippingGroup[] = []
+  const instances: { batch: BatchedMesh; id: number }[] = []
+  const box = new Box3()
+  const matrix = new Matrix4()
+
+  const maskBatch = (batch: BatchedMesh) => {
+    const info = (batch as unknown as { _instanceInfo?: { active: boolean }[] })._instanceInfo ?? []
+    for (let id = 0; id < info.length; id++) {
+      if (!info[id]?.active || !batch.getVisibleAt(id)) continue
+      if (!batch.getBoundingBoxAt(batch.getGeometryIdAt(id), box)) continue
+      box.applyMatrix4(batch.getMatrixAt(id, matrix)).applyMatrix4(batch.matrixWorld)
+      const verdict = classify(
+        {
+          x0: box.min.x,
+          x1: box.max.x,
+          z0: box.min.z,
+          z1: box.max.z,
+          y0: box.min.y,
+          y1: box.max.y,
+        },
+        rects,
+      )
+      if (verdict.kind !== 'outside') continue
+      batch.setVisibleAt(id, false)
+      instances.push({ batch, id })
+    }
+  }
+
+  const scan = () => {
+    // Everything drawable: meshes, but also lines, points and sprites.
+    const found: Mesh[] = []
+    root.traverseVisible((object) => {
+      const drawable = object as Object3D & {
+        isMesh?: boolean
+        isLine?: boolean
+        isPoints?: boolean
+        isSprite?: boolean
+      }
+      if (
+        !seen.has(object) &&
+        (drawable.isMesh || drawable.isLine || drawable.isPoints || drawable.isSprite) &&
+        object.layers.isEnabled(0)
+      ) {
+        found.push(object as Mesh)
+      }
+    })
+    for (const mesh of found) {
+      seen.add(mesh)
+      if ((mesh as unknown as BatchedMesh).isBatchedMesh) {
+        maskBatch(mesh as unknown as BatchedMesh)
+        continue
+      }
+      const parent = mesh.parent
+      if (!parent) continue
+      box.setFromObject(mesh)
+      // No usable bounds (an empty batch, a sprite): it cannot be clipped, so it goes.
+      if (box.isEmpty()) {
+        mesh.visible = false
+        hidden.push(mesh)
+        continue
+      }
+      const verdict = classify(
+        {
+          x0: box.min.x,
+          x1: box.max.x,
+          z0: box.min.z,
+          z1: box.max.z,
+          y0: box.min.y,
+          y1: box.max.y,
+        },
+        rects,
+      )
+      if (verdict.kind === 'inside') continue
+      if (verdict.kind === 'outside') {
+        mesh.visible = false
+        hidden.push(mesh)
+        continue
+      }
+      for (const [i, rect] of verdict.rects.entries()) {
+        const group = new ClippingGroup()
+        // A point is kept where every plane's signed distance is positive.
+        group.clippingPlanes = [
+          new Plane(new Vector3(1, 0, 0), -rect.x0),
+          new Plane(new Vector3(-1, 0, 0), rect.x1),
+          new Plane(new Vector3(0, 0, 1), -rect.z0),
+          new Plane(new Vector3(0, 0, -1), rect.z1),
+          ...(rect.top === undefined ? [] : [new Plane(new Vector3(0, -1, 0), rect.top)]),
+        ]
+        if (i === 0) {
+          moved.push({ mesh, parent, index: parent.children.indexOf(mesh), group })
+          parent.add(group)
+          group.add(mesh)
+        } else {
+          // A host batch mesh cannot be cloned; it keeps its first rectangle only.
+          let clone: Mesh
+          try {
+            clone = mesh.clone()
+          } catch {
+            continue
+          }
+          seen.add(clone)
+          parent.add(group)
+          group.add(clone)
+          extra.push(group)
+        }
+        group.updateMatrixWorld(true)
+      }
+    }
+  }
+
+  scan()
+  const previous = scene.onBeforeRender
+  scene.onBeforeRender = (...args) => {
+    scan()
+    previous.apply(scene, args)
+  }
+  return () => {
+    scene.onBeforeRender = previous
+    for (const { batch, id } of instances) {
+      try {
+        batch.setVisibleAt(id, true)
+      } catch {
+        // The host rebuilt or disposed the batch meanwhile.
+      }
+    }
+    for (const object of hidden) object.visible = true
+    for (const group of extra) group.removeFromParent()
+    for (const { mesh, parent, index, group } of moved) {
+      group.removeFromParent()
+      parent.add(mesh)
+      // Back to its old slot, so the host's own child order is untouched.
+      parent.children.splice(parent.children.indexOf(mesh), 1)
+      parent.children.splice(index, 0, mesh)
+      mesh.updateMatrixWorld(true)
+    }
+  }
+}
+
 /** A scene whose build count stops moving for this long holds a node nothing will settle. */
 const SCENE_BUILD_STALL_MS = 15_000
 /** However busy the scene, a render waits no longer than this for it. */
@@ -181,7 +357,7 @@ export default function StudioCaptureSystem() {
   }, [])
 
   useEffect(() => {
-    const camera = new PerspectiveCamera(60, 16 / 9, DEFAULT_NEAR, 400)
+    const camera = new PerspectiveCamera(60, 16 / 9, DEFAULT_NEAR, DEFAULT_FAR)
     camera.layers.disable(OVERLAY_LAYER)
     camera.layers.disable(GRID_LAYER)
     cameraRef.current = camera
@@ -265,7 +441,7 @@ export default function StudioCaptureSystem() {
     // level and gets its tilt as a vertical lens shift instead: the same framing,
     // verticals stay vertical, and the plane removes a wall from floor to ceiling
     // rather than only its top.
-    const cut = (node.clip ?? 0) > 0 && node.projection !== 'top'
+    const cut = (node.clip ?? 0) > 0 && node.projection === 'eye'
     if (cut) direction.y = 0
     camera.position.set(eye[0], eye[1], eye[2])
     camera.up.set(shot.up[0], shot.up[1], shot.up[2])
@@ -278,7 +454,9 @@ export default function StudioCaptureSystem() {
     camera.fov = captureFov({ fov: shot.fov, requested: aspect, canvas: canvasAspect })
     camera.aspect = Number.isFinite(canvasAspect) && canvasAspect > 0 ? canvasAspect : aspect
     // The section plane is the near plane: anything closer is simply not drawn.
-    camera.near = cut ? node.clip : DEFAULT_NEAR
+    // An `ortho` shot stands far back and brings its own depth range.
+    camera.near = shot.depth?.near ?? (cut ? node.clip : DEFAULT_NEAR)
+    camera.far = shot.depth?.far ?? DEFAULT_FAR
     camera.clearViewOffset()
     if (cut) {
       // Shift the frustum by the tilt: a direction `pitch` below the horizon sits
@@ -307,19 +485,40 @@ export default function StudioCaptureSystem() {
     })
 
     // Looking down at a roofed storey otherwise fills the frame with the
-    // underside of the ceiling. Visibility is restored right after the render,
+    // underside of the ceiling: a top shot, an ortho shot looking down, or any
+    // camera above the ceiling. Visibility is restored right after the render,
     // before the GPU readback.
-    const restoreCeiling =
-      node.projection === 'top' ? temporarilyHideNodeTypes(['ceiling']) : () => {}
+    const fromAbove =
+      node.projection === 'top' ||
+      (node.projection === 'ortho' && node.pitch < 0) ||
+      eye[1] > bounds.ceiling
+    const restoreCeiling = fromAbove ? temporarilyHideNodeTypes(['ceiling']) : () => {}
     // Walls, doors and items are drawn by merged per-level meshes, so hiding a
     // node's own object alone changes nothing. The thumbnail capture event hands
     // every node its own draw call back (the same handshake the editor's
     // thumbnail generator uses); the merged wall mesh is then switched off for
-    // the shot, which leaves each node's own object to hide.
+    // the shot, which leaves each node's own object to hide or clip.
     const hideIds = node.hide ?? []
-    const restoreBatches = hideIds.length > 0 ? standDownBatches(scene) : () => {}
+    // A shot looking down at an angle cuts the walls facing it down to
+    // `cutaway`, see `maskRects`.
+    const oblique =
+      node.projection !== 'top' && node.pitch < -1 && node.pitch > -89 && (node.cutaway ?? 0) > 0
+    const cutaway: Cutaway | undefined = oblique
+      ? {
+          toward: [-Math.sin(node.rotation[1]), -Math.cos(node.rotation[1])],
+          height: node.cutaway,
+        }
+      : undefined
+    const rects = maskRects(nodes, node.mask ?? [], cutaway)
+    const restoreBatches =
+      hideIds.length > 0 || rects.length > 0 ? standDownBatches(scene) : () => {}
     const restoreHidden = temporarilyHideNodes(hideIds)
+    const restoreMask =
+      rects.length > 0
+        ? maskScene(scene as Scene, scene.getObjectByName('scene-renderer') ?? scene, rects)
+        : () => {}
     const restore = () => {
+      restoreMask()
       restoreHidden()
       restoreBatches()
       restoreCeiling()

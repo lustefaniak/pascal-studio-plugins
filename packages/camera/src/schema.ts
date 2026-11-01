@@ -4,9 +4,12 @@ import { z } from 'zod'
 /**
  * How a shot is framed. `eye` is a normal standing view; `top` looks straight
  * down and asks the capture to drop the ceiling, which would otherwise fill
- * the whole frame with its underside.
+ * the whole frame with its underside. `ortho` is a parallel projection along
+ * yaw and pitch, `span` metres high, centred on the node's position: pitch -90
+ * is an orthographic plan, yaw 45° with pitch -35.26° an isometric view. It
+ * drops the ceiling too when it looks down.
  */
-export const ShotProjection = z.enum(['eye', 'top'])
+export const ShotProjection = z.enum(['eye', 'top', 'ortho'])
 export type ShotProjection = z.infer<typeof ShotProjection>
 
 /**
@@ -55,6 +58,28 @@ export const StudioCameraNode = BaseNode.extend({
    * the full scene, so the room stays lit as if the wall were there.
    */
   clip: z.number().min(0).max(30).default(0),
+  /**
+   * Height of an `ortho` frame in metres; ignored by the other projections. The
+   * width follows from the file's aspect ratio.
+   */
+  span: z.number().min(0.5).max(100).default(6),
+  /**
+   * Zone ids the shot keeps. Empty shows the whole scene. Otherwise everything
+   * outside those zones' outlines, grown by `MASK_MARGIN` so the rooms' own
+   * walls stay whole, is cut away for this shot only: whole objects outside are
+   * hidden, objects crossing the outline are clipped at it. Works in every
+   * projection; see `cutaway` for the walls in front of the camera. Shadows
+   * still come from the full scene.
+   */
+  mask: z.array(z.string()).default([]),
+  /**
+   * For a masked shot looking down at an angle (an isometric view, or a
+   * perspective one from above): the walls of the masked rooms that face the
+   * camera, with their tiles, doors and whatever stands against them, are cut
+   * down to this height in metres, so they stop hiding the room. The far walls
+   * stay full height. 0 is off; a straight-down shot has no near walls.
+   */
+  cutaway: z.number().min(0).max(5).default(0.9),
 })
 
 export type StudioCameraNode = z.infer<typeof StudioCameraNode>

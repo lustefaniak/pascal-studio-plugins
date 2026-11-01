@@ -7,9 +7,20 @@ export type Framing = {
   fov: number
   /** lookAt needs a roll reference; straight down is the one case where +y is degenerate. */
   up: [number, number, number]
+  /** Near and far planes an `ortho` shot needs; undefined keeps the capture camera's own. */
+  depth?: { near: number; far: number }
 }
 
 const DEG = Math.PI / 180
+
+/**
+ * How far back an `ortho` shot stands. The snapshot pipeline (SSGI, denoise,
+ * edges) is built for one perspective camera, so a parallel projection is a
+ * telephoto from far away: at 300 m a 10 m deep room changes scale by about
+ * 3 % front to back, which reads as orthographic. The Blender engine uses a
+ * true orthographic camera.
+ */
+export const ORTHO_DISTANCE = 300
 
 /**
  * Where the camera looks. Yaw 0 faces +z, which is south on the floor plan —
@@ -28,6 +39,23 @@ export function framingOf(node: StudioCameraNode, _aspect: number): Framing {
     Math.sin(pitch),
     Math.cos(yaw) * horizontal,
   ]
+  // Straight down (or up), +y is parallel to the view direction and lookAt
+  // degenerates; -z keeps plan north at the top of the frame.
+  const vertical = Math.abs(Math.cos(pitch)) < 1e-6
+  const up: [number, number, number] = vertical ? [0, 0, -1] : [0, 1, 0]
+
+  if (node.projection === 'ortho') {
+    // The node's position is the point the frame is centred on.
+    const d = ORTHO_DISTANCE
+    const position: [number, number, number] = [x - dir[0] * d, y - dir[1] * d, z - dir[2] * d]
+    return {
+      position,
+      target: [x, y, z],
+      fov: (2 * Math.atan((node.span ?? 6) / 2 / d)) / DEG,
+      up,
+      depth: { near: d - 60, far: d + 60 },
+    }
+  }
 
   // A metre of throw is enough: only the direction matters to lookAt.
   const target: [number, number, number] = [x + dir[0], y + dir[1], z + dir[2]]
@@ -36,9 +64,7 @@ export function framingOf(node: StudioCameraNode, _aspect: number): Framing {
     position: [x, y, z],
     target,
     fov: node.fov,
-    // Looking straight down, +y is parallel to the view direction and lookAt
-    // degenerates; -z keeps plan north at the top of the frame.
-    up: isTop ? [0, 0, -1] : [0, 1, 0],
+    up,
   }
 }
 

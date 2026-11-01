@@ -34,6 +34,9 @@ export const cameraDefinition: CameraDefinition = {
     room: '',
     hide: [],
     clip: 0,
+    span: 6,
+    mask: [],
+    cutaway: 0.9,
   }),
 
   capabilities: {

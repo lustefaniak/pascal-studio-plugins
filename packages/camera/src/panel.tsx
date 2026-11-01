@@ -177,7 +177,7 @@ function CameraRow({
   // Re-preview whenever anything that changes the picture changes. Debounced,
   // because dragging a slider in the inspector would otherwise queue a render
   // per frame.
-  const signature = `${camera.position.join()}|${camera.rotation[1]}|${camera.fov}|${camera.pitch}|${camera.projection}|${camera.clip}`
+  const signature = `${camera.position.join()}|${camera.rotation[1]}|${camera.fov}|${camera.pitch}|${camera.projection}|${camera.clip}|${camera.span}|${(camera.mask ?? []).join()}`
   useEffect(() => {
     if (!selected) return
     const timer = setTimeout(() => useStudioStore.getState().requestPreview(camera.id), 350)
@@ -220,7 +220,11 @@ function CameraRow({
           <span style={S.muted}>
             {camera.shot ? `no. ${camera.shot}` : 'unnumbered'}
             {camera.room ? ` · ${roomLabel(camera.room)}` : ''}
-            {camera.projection === 'top' ? ' · top-down' : ` · ${camera.fov}° / ${camera.pitch}°`}
+            {camera.projection === 'top'
+              ? ' · top-down'
+              : camera.projection === 'ortho'
+                ? ` · ortho ${camera.span} m / ${camera.pitch}°`
+                : ` · ${camera.fov}° / ${camera.pitch}°`}
           </span>
         </button>
         <button disabled={busy} onClick={() => onRender([camera.id])} style={S.small} type="button">

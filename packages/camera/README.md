@@ -16,10 +16,23 @@ the studio worker ([contract](../core#the-worker)) to write renders to disk.
   framing, verticals stay vertical (two-point perspective), and the wall goes from floor to ceiling.
   The marker draws the plane in the viewport.
 - `hide` lists node ids hidden for that shot only (single items in the way).
-- `shot` is a stable number and `room` an id from the project's room list; both exist for whatever
-  consumes the shots and are never reassigned.
-- Markers sit on `OVERLAY_LAYER`, which the capture camera disables, so they never appear in a render.
-  `K` toggles them in the viewport.
+- `projection` is `eye`, `top` or `ortho`. An `ortho` shot is a parallel projection along yaw and
+  `pitch`, `span` metres high, centred on the node's position: pitch -90 gives an orthographic plan,
+  yaw 45° with pitch -35.26° an isometric view. The snapshot pipeline is built for one perspective
+  camera, so the browser engine draws it as a telephoto from 300 m away (about 3 % scale change
+  across a 10 m room); the Blender engine uses a true orthographic camera. `top`, `ortho` looking
+  down and any camera above the ceiling drop the ceiling.
+- `mask` lists zone ids the shot keeps; empty shows the whole scene. The kept area is each zone's
+  outline (on the wall axes) grown by 0.14 m, so the room's own walls and tiles stay whole. A
+  masked shot looking down at an angle (isometric, or perspective from above) also gets a cutaway:
+  in a band 0.14 m either side of the outline edges that face the camera, only what is below
+  `cutaway` metres (default 0.9, 0 off) is kept, so the near walls with their tiles, doors and
+  fittings are cut down and stop hiding the room, while the far walls stay full height. `mask.ts` offsets the outline and cuts it into disjoint axis-aligned rectangles (exact for
+  rectilinear rooms). For the shot, a mesh entirely outside is hidden, and a mesh crossing the
+  outline is put in a `ClippingGroup` with the four vertical planes (plus the cutaway plane) of each
+  rectangle it touches,
+  cloned once per further rectangle, because a clipping region is convex. It works in every
+  projection. Shadows are not clipped, so a removed neighbour still shades the room.
 
 ## Idle frame loop
 

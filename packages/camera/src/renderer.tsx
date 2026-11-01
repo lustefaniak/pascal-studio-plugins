@@ -39,11 +39,12 @@ export default function StudioCameraRenderer({ node }: { node: StudioCameraNode 
   // The wedge shows where the shot actually points, so a camera can be aimed
   // by eye in the viewport instead of by typing a pitch and re-rendering.
   const tilt = node.projection === 'top' ? -90 : node.pitch
-  const spread = Math.tan((node.fov * Math.PI) / 360) * 1.2
+  // An ortho shot's rays are parallel: draw a narrow beam rather than a cone.
+  const spread = node.projection === 'ortho' ? 0.15 : Math.tan((node.fov * Math.PI) / 360) * 1.2
   // The section plane, sized to the frustum at its distance (vertical fov; the
   // width assumes a 16:9 frame, which is what the shots are rendered at). It
   // hangs level from the camera: a cut shot is rendered level with a lens shift.
-  const clip = node.clip ?? 0
+  const clip = node.projection === 'eye' ? (node.clip ?? 0) : 0
   const clipH = 2 * Math.tan((node.fov * Math.PI) / 360) * clip
 
   useLayoutEffect(() => {

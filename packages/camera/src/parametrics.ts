@@ -1,5 +1,6 @@
 import { ROOM_IDS } from '@lustefaniak/pascal-studio-core/rooms'
 import type { ParametricDescriptor } from '@pascal-app/core'
+import MaskField from './mask-field'
 import type { StudioCameraNode } from './schema'
 
 /**
@@ -13,9 +14,10 @@ export const cameraParametrics: ParametricDescriptor<StudioCameraNode> = {
     {
       label: 'Framing',
       fields: [
-        { key: 'projection', kind: 'enum', options: ['eye', 'top'], display: 'segmented' },
+        { key: 'projection', kind: 'enum', options: ['eye', 'top', 'ortho'], display: 'segmented' },
         {
           key: 'fov',
+          visibleIf: (node) => node.projection !== 'ortho',
           kind: 'number',
           unit: '°',
           min: 10,
@@ -33,8 +35,37 @@ export const cameraParametrics: ParametricDescriptor<StudioCameraNode> = {
           // that the capture ignores would just mislead.
           visibleIf: (node) => node.projection !== 'top',
         },
+        // Frame height of an orthographic shot.
+        {
+          key: 'span',
+          kind: 'number',
+          unit: 'm',
+          min: 0.5,
+          max: 100,
+          step: 0.1,
+          visibleIf: (node) => node.projection === 'ortho',
+        },
         // Section plane distance; the marker draws the plane so it can be set by eye.
-        { key: 'clip', kind: 'number', unit: 'm', min: 0, max: 30, step: 0.05 },
+        {
+          key: 'clip',
+          kind: 'number',
+          unit: 'm',
+          min: 0,
+          max: 30,
+          step: 0.05,
+          visibleIf: (node) => node.projection === 'eye',
+        },
+        { key: 'mask', kind: 'custom', component: MaskField },
+        // Height the near walls of a masked shot looking down are cut to.
+        {
+          key: 'cutaway',
+          kind: 'number',
+          unit: 'm',
+          min: 0,
+          max: 5,
+          step: 0.05,
+          visibleIf: (node) => (node.mask ?? []).length > 0 && node.projection !== 'top',
+        },
       ],
     },
     {

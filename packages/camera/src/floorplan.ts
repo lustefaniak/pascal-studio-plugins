@@ -19,8 +19,8 @@ export function buildCameraFloorplan(
 
   const children: FloorplanGeometry[] = []
 
-  if (node.projection === 'top') {
-    // A top-down shot has no bearing worth drawing; show its coverage instead.
+  if (node.projection !== 'eye') {
+    // A top-down or orthographic shot has no cone worth drawing; mark its centre instead.
     children.push({
       kind: 'circle',
       cx: x,
