@@ -477,7 +477,7 @@ export default function StudioCaptureSystem() {
 
     const viewer = useViewer.getState()
     pipeline.applyEnvironment({
-      theme: viewer.sceneTheme,
+      theme: viewer.sceneAppearance,
       transparent: false,
       grade: viewer.shading === 'rendered',
       edges: viewer.edges,

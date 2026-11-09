@@ -41,9 +41,9 @@
     "@lustefaniak/pascal-studio-core": "workspace:^"
   },
   "peerDependencies": {
-    "@pascal-app/core": "^1.0.3",
-    "@pascal-app/editor": "^1.0.3",
-    "@pascal-app/viewer": "^1.0.3",
+    "@pascal-app/core": "^1.0.7",
+    "@pascal-app/editor": "^1.0.7",
+    "@pascal-app/viewer": "^1.0.7",
     "@react-three/fiber": "^9",
     "react": "^18 || ^19",
     "three": "^0.186",
